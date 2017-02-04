@@ -29,28 +29,39 @@ def MakeCsvRow(uri, field):
 
 def ParseSimpleType(simpleNode):
     baseMap = simpleNode.attrib
+    #print(baseMap)
     baseMap['type'] = FilterString(simpleNode[0][0].attrib['base'])
     for n in simpleNode[0][0]:
-        if 'minLength' in n.tag:
+        if 'min' in n.tag:
             baseMap['minLength'] = n.attrib['value']
-        if 'maxLength' in n.tag:
+        if 'max' in n.tag:
             baseMap['maxLength'] = n.attrib['value']
-    print(baseMap)
+    #print(baseMap)
     return baseMap
 
-def ParseNodeTypes(root):
+#method to parse sequences
+def ParseSequence(sequence, mappings, nameOfBase):
+    #print(nameOfBase)
+    #print(sequence.tag)
+    for e in sequence:
+        if 'type' in e.attrib:
+            mappings[nameOfBase].append(e.attrib)
+        else:
+            #print(e.tag)
+            mappings[nameOfBase].append(ParseSimpleType(e))
+    return mappings
+
+def ParseComplexTypes(root):
     mappings = {}
     complexTypes = [element for element in root if 'complexType' in element.tag]
     for c in complexTypes:
         mappings[c.attrib['name']] = []
         if 'complexContent' in c[0].tag:
             mappings[c.attrib['name']].append({'type' : c[0][0].attrib['base'], 'name' : ''})
+            if len(c[0][0]) > 0:
+                mappings = ParseSequence(c[0][0][0], mappings, c.attrib['name'])
         else:
-            for e in c[0]:
-                if ('type' in e.attrib):
-                    mappings[c.attrib['name']].append(e.attrib)
-                else:
-                    mappings[c.attrib['name']].append(ParseSimpleType(e))
+            mappings = ParseSequence(c[0], mappings, c.attrib['name'])
     return mappings
 
 #root = root node
@@ -76,23 +87,25 @@ def FieldIsPrimitive(field):
 	return False
 
 #make CSV
-def PrintCSV(fileName):
+def MakeCSVArray(fileName):
     tree = etree.parse(fileName + '.xsd')
     root = tree.getroot()
     complexTypes = [element for element in root if 'complexType' in element.tag]
 
     #create type mappings
-    mappings = ParseNodeTypes(root)
+    mappings = ParseComplexTypes(root)
     roots = [element for element in root if 'element' in element.tag]
     retVal = []
 
     for r in roots:
         retVal.append((r.attrib['name'], TraverseNode(r.attrib['name'], r.attrib['type'], r.attrib['name'], mappings)))
+    return retVal
 
+def PrintCSVArray(retVal, fileName):
     for rootName, csvLines in retVal:
         csvFile = open("xsdTrees\\{0}Root{1}.csv".format(fileName, rootName), 'w')
         csvFile.write(",".join(attributes) + '\n')
-        newCsvLines = [re.sub(r'//', '/', line) for line in csvLines]
+        newCsvLines = [re.sub(r'/+', '/', line) for line in csvLines]
         csvFile.write('\n'.join(newCsvLines))
 
 files = os.listdir('.\\')
@@ -104,4 +117,4 @@ for a in files:
     m = re.match("(.*?)\.xsd$", a)
     if m:
         print(m.group(0))
-        PrintCSV(m.group(1))
+        PrintCSVArray(MakeCSVArray(m.group(1)), m.group(1))
